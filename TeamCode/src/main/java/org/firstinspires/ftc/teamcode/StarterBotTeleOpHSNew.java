@@ -106,7 +106,7 @@ public class StarterBotTeleOpHSNew extends OpMode {
         telemetry.clearAll();
 
         // Drive inputs (arcade)
-        arcadeDrive(-gamepad1.left_stick_y, gamepad1.right_stick_x);
+        arcadeDrive(gamepad1.left_stick_y, gamepad1.right_stick_x);
 
         // Right bumper: rising edge starts the launcher at default speed
         boolean rightBumper = gamepad1.right_bumper;
