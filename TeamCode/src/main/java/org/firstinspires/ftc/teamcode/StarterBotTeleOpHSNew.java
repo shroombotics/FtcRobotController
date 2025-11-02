@@ -27,9 +27,9 @@ public class StarterBotTeleOpHSNew extends OpMode {
     final double FULL_SPEED = 1.0;
 
     // Launcher velocity presets (A=low, X=medium, Y=high)
-    final double LAUNCHER_SPEED_A = 900;
-    final double LAUNCHER_SPEED_X = 1125; // default
-    final double LAUNCHER_SPEED_Y = 1400;
+    final double LAUNCHER_SPEED_A = 1260;
+    final double LAUNCHER_SPEED_X = 1175; // default
+    final double LAUNCHER_SPEED_Y = 1360;
 
     // Working target/minimum values
     double LAUNCHER_TARGET_VELOCITY = LAUNCHER_SPEED_X;
