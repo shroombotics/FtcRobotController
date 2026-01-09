@@ -7,6 +7,7 @@ import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.util.Range;
 import org.firstinspires.ftc.robotcore.external.JavaUtil;
 
 /*
@@ -18,6 +19,16 @@ Our robot works by doing the following:
 - arcadeDrive: Controls movement of the wheels, allows straffing.
                The balls are loaded from the side.
 */
+
+/*
+- Fix kickstand; stuck on wheel
+- Check analog code for kickstand
+- Mode switch (between kickstand and drive)
+- Launch code
+- Intake control
+- Drive code (forward is back and back is forward)
+- Emergency code
+ */
 
 @TeleOp(name = "_BotV2Teleop.java")
 public class _BotV2Teleop extends OpMode {
@@ -41,23 +52,36 @@ public class _BotV2Teleop extends OpMode {
     private CRServo intakeRight;
 
     boolean intakesRunning;
-    final double STOP_SPEED = 0.0;
-    final double FULL_SPEED = 1.0;
+    final double INTAKE_STOP_SPEED = 0.0;
+    final double INTAKE_FULL_SPEED = 1.0;
 
     // Setup kickstand
     private Servo kickstandFront;
     private Servo kickstandBack;
-    
+
     // kickstand back
     final double KICKSTAND_BACK_REST = 0.6;
     final double KICKSTAND_BACK_DEPLOY = 0.5;
-    
+
     // kickstand front
     final double KICKSTAND_FRONT_REST = 0.475;
     final double KICKSTAND_FRONT_DEPLOY = 0.575;
-    // front
-    // .4
-    // .5
+
+    double kickstandRightY;
+
+
+    // Indexer
+    private CRServo indexer;
+
+    //Release
+    private CRServo releaseRight;
+    private CRServo releaseLeft;
+
+    //Launcher
+    private DcMotor shooter;
+    final double SHOOTER_STOP_SPEED = 0.0;
+    final double SHOOTER_FULL_SPEED = 1.0;
+    double SHOOTER_CURRENT_SPEED;
 
     @Override
     public void init() {
@@ -80,16 +104,28 @@ public class _BotV2Teleop extends OpMode {
         driveBackLeft.setDirection(DcMotor.Direction.REVERSE);
 
         // Set up intake directions
-        intakeLeft.setDirection(DcMotor.Direction.FORWARD);
-        intakeRight.setDirection(DcMotor.Direction.REVERSE);
+        intakeLeft.setDirection(DcMotor.Direction.REVERSE);
+        intakeRight.setDirection(DcMotor.Direction.FORWARD);
 
         // Get kickstands
-        kickstandFront = hardwareMap.get(Servo.class, "kickstandFront");
-        kickstandBack = hardwareMap.get(Servo.class, "kickstandBack");
-        
+        kickstandFront = hardwareMap.get(Servo.class, "KF");
+        kickstandBack = hardwareMap.get(Servo.class, "KB");
+
         // kickstand rest init
         kickstandFront.setPosition(KICKSTAND_FRONT_REST);
         kickstandBack.setPosition(KICKSTAND_BACK_REST);
+
+        shooter = hardwareMap.get(DcMotor.class, "SHTR");
+        indexer = hardwareMap.get(CRServo.class, "IND");
+        releaseRight = hardwareMap.get(CRServo.class, "RR");
+        releaseLeft = hardwareMap.get(CRServo.class, "RL");
+
+        shooter.setDirection(DcMotor.Direction.FORWARD);
+
+        releaseLeft.setDirection(DcMotor.Direction.FORWARD);
+        releaseRight.setDirection(DcMotor.Direction.REVERSE);
+
+        indexer.setDirection(DcMotor.Direction.REVERSE);
 
         telemetry.addData("Status", "Initialized TeleOp");
         telemetry.setAutoClear(false);
@@ -107,23 +143,29 @@ public class _BotV2Teleop extends OpMode {
 
     @Override
     public void stop() {
-        intakeLeft.setPower(STOP_SPEED);
-        intakeRight.setPower(STOP_SPEED);
+        intakeLeft.setPower(INTAKE_STOP_SPEED);
+        intakeRight.setPower(INTAKE_STOP_SPEED);
     }
 
     @Override
     public void loop() {
         // Clear telemetry each time
         telemetry.clearAll();
-        
+
         if (gamepad1.left_bumper) {
             motor_speed = motor_speed_default / 4;
         } else {
             motor_speed = motor_speed_default;
         }
-        
+
         // Handle drive code
         arcadeDrive();
+
+        indexer.setPower(1);
+        shooter.setPower(1);
+        releaseLeft.setPower(.5);
+        releaseRight.setPower(.5);
+
 
         // Shot control tolerence
         if (gamepad1.right_trigger > 0.1) {
@@ -131,21 +173,22 @@ public class _BotV2Teleop extends OpMode {
         }
 
         if (intakesRunning) {
-            intakeLeft.setPower(FULL_SPEED);
-            intakeRight.setPower(FULL_SPEED);
+            intakeLeft.setPower(INTAKE_FULL_SPEED);
+            intakeRight.setPower(INTAKE_FULL_SPEED);
         } else {
-            intakeLeft.setPower(STOP_SPEED);
-            intakeRight.setPower(STOP_SPEED);
+            intakeLeft.setPower(INTAKE_STOP_SPEED);
+            intakeRight.setPower(INTAKE_STOP_SPEED);
         }
 
         if (gamepad1.b && gamepad1.left_bumper) {
-           kickstand(); 
+            kickstand();
         }
-        
+
         if (gamepad1.a && gamepad1.left_bumper) {
             kickstandFront.setPosition(KICKSTAND_FRONT_REST);
             kickstandBack.setPosition(KICKSTAND_BACK_REST);
         }
+
     }
 
     public void load() {
@@ -157,9 +200,32 @@ public class _BotV2Teleop extends OpMode {
     }
 
     public void kickstand() {
-        //kickstandFront.setPosition(-1 * KICKSTAND_REST);
         kickstandBack.setPosition(KICKSTAND_BACK_DEPLOY);
         kickstandFront.setPosition(KICKSTAND_FRONT_DEPLOY);
+    }
+
+    public void kickstandAnalog() {
+        double kickstandBackPos;
+        double kickstandFrontPos;
+        double kickstandBackPosNormal;
+        double kickstandFrontPosNormal;
+        double normalized;
+
+        kickstandRightY = gamepad1.right_stick_y;
+        normalized = (kickstandRightY + 1.0) / 2;
+
+        kickstandBackPosNormal = KICKSTAND_BACK_REST * normalized * (KICKSTAND_BACK_DEPLOY - KICKSTAND_BACK_REST);
+        kickstandFrontPosNormal = KICKSTAND_FRONT_REST * normalized * (KICKSTAND_FRONT_DEPLOY - KICKSTAND_FRONT_REST);
+
+        kickstandBackPos = Range.clip(kickstandBackPosNormal, KICKSTAND_BACK_REST, KICKSTAND_BACK_DEPLOY);
+        kickstandFrontPos = Range.clip(kickstandFrontPosNormal, KICKSTAND_FRONT_REST, KICKSTAND_FRONT_DEPLOY);
+
+        kickstandBack.setPosition(kickstandBackPos);
+        kickstandFront.setPosition(kickstandFrontPos);
+
+        telemetry.addData("Kickstand Y", kickstandRightY);
+        telemetry.addData("KickstandBackPos", kickstandBackPos);
+        telemetry.addData("KickstandFrontPos", kickstandFrontPos);
     }
 
     public void arcadeDrive() {
@@ -182,6 +248,13 @@ public class _BotV2Teleop extends OpMode {
         driveBackLeft.setPower(((y - x) + rx) / denominator);
         driveFrontRight.setPower(((y - x) - rx) / denominator);
         driveBackRight.setPower(((y + x) - rx) / denominator);
+
+        /*
+        driveFrontLeft.setPower((y - x - rx) / denominator);
+        driveBackLeft.setPower(((y + x) - rx) / denominator);
+        driveFrontRight.setPower(((y + x) + rx) / denominator);
+        driveBackRight.setPower(((y - x) + rx) / denominator);
+        */
     }
 
 }
